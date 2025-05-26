@@ -3,10 +3,12 @@ import { ref } from 'vue';
 import Login from './components/Login.vue';
 import Home from './components/Home.vue';
 import { invoke } from '@tauri-apps/api/core';
+import Test from './components/Test.vue';
 const activeButton = ref('connect');
 const tabs = [
   { name: 'connect', label: '连接' },
   { name: 'file', label: '文件' },
+  { name: 'test', label: '测试' }
 ];
 async function quit() {
   // 退出逻辑
@@ -18,12 +20,8 @@ async function quit() {
 <template>
   <main class="container">
     <div class="sidebar d-flex flex-column">
-      <button
-        v-for="tab in tabs"
-        :key="tab.name"
-        :class="{ active: activeButton === tab.name }"
-        @click="activeButton = tab.name"
-      >
+      <button v-for="tab in tabs" :key="tab.name" :class="{ active: activeButton === tab.name }"
+        @click="activeButton = tab.name">
         {{ tab.label }}
       </button>
       <button @click="quit" class="btn">
@@ -36,6 +34,9 @@ async function quit() {
       </div>
       <div v-else-if="activeButton === 'file'">
         <Home />
+      </div>
+      <div v-else-if="activeButton === 'test'">
+        <Test />
       </div>
     </div>
   </main>
@@ -61,14 +62,17 @@ async function quit() {
   border-radius: 15px;
   background-color: transparent;
 }
+
 .sidebar button.active {
   background-color: lightblue;
   color: white;
 }
+
 .sidebar button:hover {
   background-color: gray;
   color: black;
 }
+
 .view {
   position: relative;
   margin-top: 0;

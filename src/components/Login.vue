@@ -13,13 +13,10 @@ const msgClass = computed(() => {
   return status.value ? 'alert-success' : 'alert-danger'
 })
 type ErrorKind = {
-  kind: 'io' | 'utf8' | 'invalidIpAddr';
+  kind: 'io' | 'utf8' | 'invalidIpAddr' | 'server';
   message: string;
 };
 
-async function testlogin() {
-  await doLogin('127.0.0.1', 'test', 'test', 2121)
-}
 async function doLogin(host: string, name: string, passwd: string, port: number) {
   isLoading.value = true
   msg.value = null
@@ -93,9 +90,6 @@ async function login() {
 
           <div v-if="msg" class="alert mt-3" :class="msgClass">{{ msg }}</div>
         </form>
-        <button @click="testlogin" class="btn btn-secondary mt-3 w-100 h-10">
-          测试登录
-        </button>
       </div>
     </div>
   </div>

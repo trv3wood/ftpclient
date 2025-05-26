@@ -10,8 +10,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import { onMounted, ref } from 'vue';
 
 const currentPath = ref<string>('');
 const list = ref<string[]>(["src", "assets", "components", "views"]);
+onMounted(async () => {
+    currentPath.value = await invoke('pwd')
+})
 </script>
