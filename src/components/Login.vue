@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, Ref, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from '@tauri-apps/api/window';
-getCurrentWindow().setFullscreen(true);
 
 const host = ref("")
 const username = ref("");
@@ -19,9 +17,9 @@ type ErrorKind = {
   message: string;
 };
 
-// async function testlogin() {
-//   doLogin('127.0.0.1', 'test', 'test', 21)
-// }
+async function testlogin() {
+  await doLogin('127.0.0.1', 'test', 'test', 2121)
+}
 async function doLogin(host: string, name: string, passwd: string, port: number) {
   isLoading.value = true
   msg.value = null
@@ -94,11 +92,9 @@ async function login() {
 
           <div v-if="msg" class="alert mt-3" :class="msgClass">{{ msg }}</div>
         </form>
-        <!--
         <button @click="testlogin" class="btn btn-secondary mt-3 w-100 h-10">
           测试登录
         </button>
-        -->
       </div>
     </div>
   </div>
@@ -107,6 +103,7 @@ async function login() {
 <style scoped>
 .card {
   border-radius: 0.5rem;
+  background-color: aliceblue;
 }
 
 .spinner-border {

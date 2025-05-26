@@ -1,4 +1,5 @@
 use std::{
+    io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpStream},
     str::FromStr,
     sync::Mutex,
@@ -17,6 +18,8 @@ enum Error {
     InvalidIpAddr(String),
     #[error("客户端错误: {0}")]
     ClientError(String),
+    #[error("服务端错误: {0}")]
+    ServerError(String),
 }
 
 #[derive(serde::Serialize)]
@@ -27,6 +30,7 @@ enum ErrorKind {
     Utf8(String),
     InvalidIpAddr(String),
     ClientError(String),
+    ServerError(String),
 }
 
 impl serde::Serialize for Error {
@@ -40,6 +44,7 @@ impl serde::Serialize for Error {
             Self::Utf8(_) => ErrorKind::Utf8(error_message),
             Self::InvalidIpAddr(_) => ErrorKind::InvalidIpAddr(error_message),
             Self::ClientError(_) => ErrorKind::ClientError(error_message),
+            Self::ServerError(_) => ErrorKind::ServerError(error_message),
         };
         error_kind.serialize(serializer)
     }
@@ -60,7 +65,7 @@ fn login(
     }
     let ip_addr = ip_addr.unwrap();
     let socket_addr = SocketAddr::new(ip_addr, port);
-    let connection = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5))?;
+    let mut connection = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5))?;
     let mut client = client
         .lock()
         .map_err(|e| Error::ClientError(e.to_string()))?;
@@ -68,8 +73,37 @@ fn login(
     client.name = name;
     client.passwd = passwd;
     client.port = port;
+    let mut buffer = [0; 1024];
+    let bytes_read = connection.read(&mut buffer)?;
+    let response = String::from_utf8_lossy(&buffer[..bytes_read]);
+    if response.starts_with("220") {
+        dbg!(&response);
+    } else {
+        return Err(Error::ServerError(format!(
+            "Unexpected response: {}",
+            response
+        )));
+    }
+    connection.write_all(b"USER ftp\r\n")?;
+    connection.flush()?;
+    // connection.write_all(b"PASS passwd\r\n")?;
+    // connection.flush()?;
+    // 读取服务器响应
+    let bytes_read = connection.read(&mut buffer)?;
+    let response = String::from_utf8_lossy(&buffer[..bytes_read]);
+    // 检查是否为 331 响应
+    if response.starts_with("331") {
+        // 发送 PASS 命令
+        connection.write_all(b"PASS passwd\r\n")?;
+        connection.flush()?;
+    } else {
+        return Err(Error::ServerError(format!(
+            "Unexpected response: {}",
+            response
+        )));
+    }
     client.socket = Some(connection);
-    dbg!("control socket: {:?}", &client);
+    dbg!(&client);
     Ok(())
 }
 
