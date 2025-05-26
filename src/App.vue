@@ -1,11 +1,80 @@
 <script setup lang="ts">
-import { RouterView } from "vue-router";
+import { ref } from 'vue';
+import Login from './components/Login.vue';
+import Home from './components/Home.vue';
+import { invoke } from '@tauri-apps/api/core';
+const activeButton = ref('connect');
+const tabs = [
+  { name: 'connect', label: '连接' },
+  { name: 'file', label: '文件' },
+];
+async function quit() {
+  // 退出逻辑
+  console.log('退出应用');
+  await invoke('logout');
+  window.close();
+}
 </script>
 <template>
-  <main>
-    <router-view />
+  <main class="container">
+    <div class="sidebar d-flex flex-column">
+      <button
+        v-for="tab in tabs"
+        :key="tab.name"
+        :class="{ active: activeButton === tab.name }"
+        @click="activeButton = tab.name"
+      >
+        {{ tab.label }}
+      </button>
+      <button @click="quit" class="btn">
+        退出
+      </button>
+    </div>
+    <div class="view">
+      <div v-if="activeButton === 'connect'">
+        <Login />
+      </div>
+      <div v-else-if="activeButton === 'file'">
+        <Home />
+      </div>
+    </div>
   </main>
 </template>
+<style scoped>
+.container {
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20%;
+  height: 100%;
+}
+
+.sidebar button {
+  padding: 1em;
+  border: none;
+  margin: 1vw 1vw;
+  border-radius: 15px;
+  background-color: transparent;
+}
+.sidebar button.active {
+  background-color: lightblue;
+  color: white;
+}
+.sidebar button:hover {
+  background-color: gray;
+  color: black;
+}
+.view {
+  position: relative;
+  margin-top: 0;
+  margin-left: 20%;
+}
+</style>
 
 <style>
 :root {

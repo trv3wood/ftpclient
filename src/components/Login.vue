@@ -40,6 +40,7 @@ async function doLogin(host: string, name: string, passwd: string, port: number)
     console.log('登录成功:', result);
     // 处理成功逻辑
     status.value = true;
+    msg.value = '登录成功！';
   } catch (e) {
     console.error('调用命令时发生意外错误:', e as ErrorKind);
     msg.value = (e as ErrorKind).message
