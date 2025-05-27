@@ -12,9 +12,8 @@ const tabs = [
 ];
 async function quit() {
   // 退出逻辑
-  console.log('退出应用');
+  console.log('退出登录');
   await invoke('logout');
-  window.close();
 }
 </script>
 <template>
