@@ -12,20 +12,20 @@ onMounted(async () => {
 // 加载目录内容
 async function loadDirectory(path: string) {
     try {
-        // 调用后端 API
-        invoke<string[]>('nls', { path: path }).then((files) => {
-            list.value = files
-        }).catch((error) => {
-            let err = error as ErrorKind
-            alert(err.kind + err.message)
-        })
-
         // 更新数据
         invoke<string>('pwd').then((res: string) => {
             currentPath.value = res
         }).catch((error) => {
             const err = error as ErrorKind
             console.error('获取当前路径失败:', err.kind, err.message)
+        })
+
+        // 调用后端 API
+        invoke<string[]>('nls', { path: path }).then((files) => {
+            list.value = files
+        }).catch((error) => {
+            let err = error as ErrorKind
+            alert(err.kind + err.message)
         })
 
         // 记录历史

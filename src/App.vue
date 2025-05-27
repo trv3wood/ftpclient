@@ -23,8 +23,8 @@ async function quit() {
         @click="activeButton = tab.name">
         {{ tab.label }}
       </button>
-      <button @click="quit" class="btn">
-        退出
+      <button @click="quit" class="btn quitbtn">
+        断开连接
       </button>
     </div>
     <div class="view">
@@ -60,6 +60,15 @@ async function quit() {
   margin: 1vw 1vw;
   border-radius: 15px;
   background-color: transparent;
+}
+
+.sidebar .quitbtn {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: calc(100% - 20px);
+  background-color: red;
+  color: white;
 }
 
 .sidebar button.active {

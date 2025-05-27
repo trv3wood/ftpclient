@@ -14,60 +14,29 @@ use std::{
 
 use crate::Error;
 
-pub struct Client(Option<ClientInner>);
-impl Client {
-    pub fn new() -> Self {
-        Self(None)
-    }
-    fn get_mut(&mut self) -> Result<&mut ClientInner, Error> {
-        self.0
-            .as_mut()
-            .ok_or_else(|| Error::Server("未登录".into()))
-    }
-    pub fn build(host: String, name: String, passwd: String, port: u16) -> Result<Self, Error> {
-        let mut inner = ClientInner::build(host, name, passwd, port)?;
-        let username_res = inner.send_command(&format!("USER {}", inner.name))?;
-        if !username_res.starts_with(b"331") {
-            dbg!(String::from_utf8_lossy(username_res));
-            return server_error!("用户名错误或未找到");
-        }
-        let pass_res = inner.send_command(&format!("PASS {}", inner.passwd))?;
-        if !pass_res.starts_with(b"230") {
-            dbg!(String::from_utf8_lossy(pass_res));
-            return server_error!("密码错误或未找到");
-        }
-        let pwd_res = inner.pwd()?;
-        inner.root = pwd_res.to_string();
-        Ok(Self(Some(inner)))
-    }
-    pub fn buffer_mut(&mut self) -> Result<&mut [u8], Error> {
-        Ok(self.get_mut()?.buffer.as_mut())
-    }
-    pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
-        self.get_mut()?.send_command(command)
-    }
-    pub fn pasv(&mut self) -> Result<TcpStream, Error> {
-        self.get_mut()?.pasv()
-    }
-    pub fn pwd(&mut self) -> Result<String, Error> {
-        self.get_mut()?.pwd()
-    }
-    pub fn is_logged_in(&self) -> bool {
-        self.0.is_some()
-    }
-}
-
 #[derive(Debug)]
-struct ClientInner {
+pub struct Client {
     name: String,
     passwd: String,
-    socket: TcpStream,
-    buffer: Box<[u8; 1024]>, // 使用 Box<[u8]> 代替 Vec<u8>，更适合只读操
-    pwd: String,
-    root: String, // 根目录
+    socket: Option<TcpStream>,
+    buf: Box<[u8; 1024]>,
+}
+impl Default for Client {
+    fn default() -> Self {
+        Self {
+            name: "".into(),
+            passwd: "".into(),
+            socket: None,
+            buf: Box::new([0; 1024]),
+        }
+    }
 }
 
-impl ClientInner {
+fn is_data_conn_open(res: &[u8]) -> bool {
+    res.starts_with(b"150") || res.starts_with(b"226")
+}
+
+impl Client {
     pub fn build(host: String, name: String, passwd: String, port: u16) -> Result<Self, Error> {
         let ip_addr = IpAddr::from_str(&host)?;
         let socket_addr = SocketAddr::new(ip_addr, port);
@@ -83,25 +52,47 @@ impl ClientInner {
         Ok(Self {
             name,
             passwd,
-            socket,
-            buffer,
-            pwd: String::new(),
-            root: String::new(), // 初始化根目录为空
+            socket: Some(socket),
+            buf: Box::new([0; 1024]),
         })
     }
     pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
-        self.socket.write_all(dbg!(command).as_bytes())?;
-        self.socket.flush()?;
-        let bytes_read = self.socket.read(self.buffer.as_mut())?;
+        let mut sock = self
+            .socket
+            .take()
+            .ok_or_else(|| Error::Server("未连接到服务器，请先登录".into()))?;
+        sock.write_all(dbg!(command).as_bytes())?;
+        sock.flush()?;
+        let bytes_read = sock.read(self.buf.as_mut())?;
         if bytes_read == 0 {
             return server_error!("服务器没有响应");
         }
-        Ok(&self.buffer[0..bytes_read])
+        self.socket = Some(sock);
+        let response = &self.buf[0..bytes_read];
+        dbg!(String::from_utf8_lossy(response));
+        Ok(response)
+    }
+    pub fn login(&mut self) -> Result<(), Error> {
+        self.send_command(&format!("USER {}\r\n", self.name))?;
+        let response = self.send_command(&format!("PASS {}\r\n", self.passwd))?;
+        if response.starts_with(b"230") {
+            Ok(())
+        } else if response.starts_with(b"530") {
+            server_error!("登录失败，用户名或密码错误")
+        } else {
+            Err(Error::Server(format!(
+                "登录失败，服务器响应: {}",
+                String::from_utf8_lossy(response)
+            )))
+        }
     }
     pub fn pasv(&mut self) -> Result<TcpStream, Error> {
         let response = self.send_command("PASV")?;
         if !response.starts_with(b"227") {
-            return server_error!("进入被动模式失败");
+            return server_error!(&format!(
+                "进入被动模式失败 {}",
+                String::from_utf8_lossy(response)
+            ));
         }
         let data_socket_info = String::from_utf8_lossy(response);
         println!("PASV Response: {}", data_socket_info);
@@ -130,7 +121,84 @@ impl ClientInner {
         let path = String::from_utf8_lossy(&response[4..])
             .trim_matches('"')
             .to_string();
-        self.pwd = path;
-        Ok(self.pwd.clone())
+        Ok(path)
+    }
+
+    pub fn nlst(&mut self, path: &str) -> Result<Vec<String>, Error> {
+        // // 创建数据连接
+        let mut data_socket = self.pasv()?;
+        // // 发送 NLST 命令获取目录列表
+        let response = self.send_command(&format!("NLST {}", path))?;
+        if !is_data_conn_open(response) {
+            return server_error!("目录列表获取失败");
+        }
+        let buf = self.buf.as_mut();
+        let bytes = data_socket.read(buf)?;
+        if bytes == 0 {
+            return server_error!("目录列表为空或读取失败");
+        }
+        let data = String::from_utf8_lossy(&buf[..bytes]);
+        let data = data
+            .split('\n')
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<String>>();
+        let transfer_response = self.read()?;
+        if !transfer_response.starts_with(b"226") {
+            self.socket.take();
+            return server_error!("数据传输结束时服务器响应错误");
+        }
+        Ok(data)
+    }
+    fn read(&mut self) -> Result<&[u8], Error> {
+        let mut sock = self
+            .socket
+            .take()
+            .ok_or_else(|| Error::Server("未连接到服务器，请先登录".into()))?;
+        let bytes_read = sock.read(self.buf.as_mut())?;
+        if bytes_read == 0 {
+            return server_error!("服务器没有响应");
+        }
+        self.socket = Some(sock);
+        Ok(&self.buf[0..bytes_read])
+    }
+    pub fn download(&mut self, file: &str) -> Result<(), Error> {
+        let mut data_socket = self.pasv()?;
+
+        let response = self.send_command(&format!("RETR {}", file))?;
+        if !is_data_conn_open(response) {
+            return server_error!("文件下载失败");
+        }
+        data_socket.set_nonblocking(true)?;
+        let download_dir = dirs::download_dir().ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "无法获取下载目录",
+        ))?;
+        let file_path = download_dir.join(&file);
+        let mut file = std::fs::File::create(&file_path)?;
+        let buffer = self.buf.as_mut();
+        loop {
+            match data_socket.read(buffer) {
+                Ok(0) => break, // 连接关闭
+                Ok(n) => file.write_all(&buffer[..n])?,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue, // 非阻塞模式下继续读取
+                Err(e) => return Err(Error::Io(e)),
+            }
+        }
+        let transfer_response = self.read()?;
+        if !transfer_response.starts_with(b"226") {
+            self.socket.take();
+            return server_error!("数据传输结束时服务器响应错误");
+        }
+        Ok(())
+    }
+    pub fn quit(&mut self) -> Result<(), Error> {
+        let response = self.send_command("QUIT")?;
+        if !response.starts_with(b"221") {
+            self.socket.take();
+            return server_error!("退出失败");
+        }
+        self.socket.take();
+        Ok(())
     }
 }
