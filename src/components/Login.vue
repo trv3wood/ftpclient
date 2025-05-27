@@ -55,10 +55,10 @@ async function login() {
 <template>
   <div class="container mt-5">
     <div class="row justify-content-center">
-      <div class="col-md-6">
+      <div class="col-md-10">
         <h1 class="text-center mb-4">FTP客户端</h1>
 
-        <form @submit.prevent="login" class="card p-4 shadow-sm">
+        <form @submit.prevent="login" class="card p-4 shadow-sm form-control">
           <div class="mb-3">
             <label for="host" class="form-label">主机地址</label>
             <input id="host" v-model="host" type="text" class="form-control" placeholder="例如: ftp.example.com" required>

@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{path::PathBuf, sync::Mutex};
 
 use tauri::State;
 
@@ -15,7 +15,7 @@ enum Error {
     ParseInt(#[from] std::num::ParseIntError),
     #[error(transparent)]
     ParseAddr(#[from] std::net::AddrParseError),
-    #[error("服务端错误: {0}")]
+    #[error("{0}")]
     Server(String),
 }
 #[derive(serde::Serialize)]
@@ -82,7 +82,7 @@ async fn pwd(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
 }
 
 #[tauri::command]
-async fn download(state: State<'_, Mutex<Client>>, file: String) -> Result<(), Error> {
+async fn download(state: State<'_, Mutex<Client>>, file: String) -> Result<PathBuf, Error> {
     let mut client = state.lock().unwrap();
     client.download(&file)
 }
@@ -93,12 +93,24 @@ async fn quit(state: State<'_, Mutex<Client>>) -> Result<(), Error> {
     client.quit()
 }
 
+#[tauri::command]
+async fn cd(state: State<'_, Mutex<Client>>, path: String) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.cd(&path)
+}
+#[tauri::command]
+async fn upload(state: State<'_, Mutex<Client>>, file: String) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.upload(file)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            login, logout, nls, pwd, download, quit
+            login, logout, nls, pwd, download, quit, cd, upload
         ])
         .manage(Mutex::new(Client::default()))
         .run(tauri::generate_context!())

@@ -6,8 +6,9 @@ macro_rules! server_error {
 }
 
 use std::{
-    io::{Read, Write},
+    io::{BufReader, Read, Write},
     net::{IpAddr, SocketAddr, TcpStream},
+    path::PathBuf,
     str::FromStr,
     time::Duration,
 };
@@ -73,7 +74,7 @@ impl Client {
         Ok(response)
     }
     pub fn login(&mut self) -> Result<(), Error> {
-        self.send_command(&format!("USER {}\r\n", self.name))?;
+        self.send_command(&format!("USER {}", self.name))?;
         let response = self.send_command(&format!("PASS {}\r\n", self.passwd))?;
         if response.starts_with(b"230") {
             Ok(())
@@ -135,7 +136,7 @@ impl Client {
         let buf = self.buf.as_mut();
         let bytes = data_socket.read(buf)?;
         if bytes == 0 {
-            return server_error!("目录列表为空或读取失败");
+            return Ok(Vec::new()); // 如果没有数据，返回空列表
         }
         let data = String::from_utf8_lossy(&buf[..bytes]);
         let data = data
@@ -162,12 +163,14 @@ impl Client {
         self.socket = Some(sock);
         Ok(&self.buf[0..bytes_read])
     }
-    pub fn download(&mut self, file: &str) -> Result<(), Error> {
+    pub fn download(&mut self, file: &str) -> Result<PathBuf, Error> {
         let mut data_socket = self.pasv()?;
 
         let response = self.send_command(&format!("RETR {}", file))?;
         if !is_data_conn_open(response) {
-            return server_error!("文件下载失败");
+            return Err(Error::Server(
+                String::from_utf8_lossy(&response[4..]).to_string(),
+            ));
         }
         data_socket.set_nonblocking(true)?;
         let download_dir = dirs::download_dir().ok_or(std::io::Error::new(
@@ -190,6 +193,27 @@ impl Client {
             self.socket.take();
             return server_error!("数据传输结束时服务器响应错误");
         }
+        Ok(file_path)
+    }
+    pub fn upload(&mut self, file: String) -> Result<(), Error> {
+        let mut data_socket: TcpStream = self.pasv()?;
+        let path: PathBuf = PathBuf::from(file);
+        let filename: std::borrow::Cow<'_, str> = path.file_name().unwrap().to_string_lossy();
+        let response = self.send_command(&format!("STOR {}", dbg!(filename)))?;
+        if !is_data_conn_open(response) {
+            return server_error!("上传文件失败");
+        }
+        let mut bufreader = BufReader::new(std::fs::File::open(&path)?);
+        std::io::copy(&mut bufreader, &mut data_socket)?;
+        // 关闭数据连接
+        data_socket.shutdown(std::net::Shutdown::Both)?;
+
+        // 读取服务器响应以确认传输结束
+        let transfer_response = self.read()?;
+        if !transfer_response.starts_with(b"226") {
+            self.socket.take();
+            return server_error!("数据传输结束时服务器响应错误");
+        }
         Ok(())
     }
     pub fn quit(&mut self) -> Result<(), Error> {
@@ -199,6 +223,13 @@ impl Client {
             return server_error!("退出失败");
         }
         self.socket.take();
+        Ok(())
+    }
+    pub fn cd(&mut self, path: &str) -> Result<(), Error> {
+        let response = self.send_command(&format!("CWD {}", path))?;
+        if !response.starts_with(b"250") {
+            return server_error!(String::from_utf8_lossy(&response[4..]).to_string());
+        }
         Ok(())
     }
 }

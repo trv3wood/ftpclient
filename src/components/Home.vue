@@ -2,70 +2,111 @@
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref } from 'vue'
 import { ErrorKind } from '../type'
+import { open } from '@tauri-apps/plugin-dialog';
 
 const currentPath = ref('.')
 const list = ref<string[]>([])
-const historyStack = ref<string[]>([]) // 用于记录导航历史
+const errMessage = ref<ErrorKind | null>(null)
 onMounted(async () => {
-    await loadDirectory(currentPath.value)
+    errMessage.value = null
+    loadDirectory(currentPath.value).catch((error) => {
+        const err = error as ErrorKind
+        errMessage.value = err
+    })
 })
 // 加载目录内容
 async function loadDirectory(path: string) {
+    // 清除错误信息
+    errMessage.value = null
+    // 更新数据
+    currentPath.value = await invoke<string>('pwd')
+    // 调用后端 API
+    list.value = await invoke<string[]>('nls', { path: path })
+}
+
+async function download(fileName: string) {
     try {
-        // 更新数据
-        invoke<string>('pwd').then((res: string) => {
-            currentPath.value = res
-        }).catch((error) => {
-            const err = error as ErrorKind
-            console.error('获取当前路径失败:', err.kind, err.message)
-        })
-
-        // 调用后端 API
-        invoke<string[]>('nls', { path: path }).then((files) => {
-            list.value = files
-        }).catch((error) => {
-            let err = error as ErrorKind
-            alert(err.kind + err.message)
-        })
-
-        // 记录历史
-        historyStack.value.push(path)
+        const save_path = await invoke('download', { file: fileName })
+        alert(`文件 ${fileName} 已保存到: ${save_path}`)
     } catch (error) {
-        console.error('加载目录失败:', error)
+        const err = error as ErrorKind
+        errMessage.value = err
     }
 }
 
+async function changeDir(path: string) {
+    // 如果是目录，进入该目录
+    try {
+        await invoke('cd', { path: path })
+        await loadDirectory('.')
+    } catch (error) {
+        const err = error as ErrorKind
+        errMessage.value = err
+    }
+}
+async function uploadfile() {
+    try {
+        const filePath = await open({
+            multiple: false,
+            directory: false,
+            filters: [{
+                name: 'All Files',
+                extensions: ['*']
+            }]
+        })
+        invoke('upload', { file: filePath })
+        await loadDirectory('.')
+    } catch (error) {
+        console.error(error)
+        const err = error as ErrorKind
+        errMessage.value = err
+    }
+}
 
 // 返回上级目录
 async function goBack() {
-    if (historyStack.value.length > 1) {
-        historyStack.value.pop()
-        const prevPath = historyStack.value[historyStack.value.length - 1]
-        await invoke('cd', { path: prevPath })
-        await loadDirectory(prevPath)
+    try {
+        await invoke('cd', { path: '..' })
+        await loadDirectory('.')
+    } catch (error) {
+        const err = error as ErrorKind
+        errMessage.value = err
     }
 }
 </script>
 
 <template>
     <div class="container">
+        <div v-if="errMessage" class="alert alert-danger">
+            {{ errMessage.kind }}: {{ errMessage.message }}
+        </div>
         <div class="navigation-bar">
-            <button @click="goBack" class="btn btn-sm btn-secondary" :disabled="historyStack.length <= 1">
+            <button @click="goBack" class="btn btn-sm btn-secondary">
                 ← 返回
             </button>
             <span class="current-path">当前路径: {{ currentPath }}</span>
+            <button @click="uploadfile" class="btn btn-sm btn-success float-end">
+                上传文件
+            </button>
         </div>
 
         <ul class="list-group">
             <li v-for="(item, index) in list" :key="index"
                 class="list-group-item d-flex justify-content-between align-items-center">
-                {{ item }}
+                <label>{{ item }}</label>
+                <button v-if="item.endsWith('/')" class="btn btn-sm btn-secondary" @click="changeDir(item)">进入</button>
+                <button v-else class="btn btn-sm btn-primary" @click="download(item)">下载</button>
             </li>
         </ul>
     </div>
 </template>
 
 <style scoped>
+.container {
+    margin: auto;
+    padding: 40px;
+}
+
 .navigation-bar {
     margin: 20px 0;
     padding: 10px;

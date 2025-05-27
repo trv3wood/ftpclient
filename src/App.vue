@@ -41,17 +41,13 @@ async function quit() {
   </main>
 </template>
 <style scoped>
-.container {
-  margin: 0 auto;
-  padding: 20px;
-}
-
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
   width: 20%;
   height: 100%;
+  background-color: aliceblue;
 }
 
 .sidebar button {
@@ -72,12 +68,12 @@ async function quit() {
 }
 
 .sidebar button.active {
-  background-color: lightblue;
+  background-color: #007bff;
   color: white;
 }
 
 .sidebar button:hover {
-  background-color: gray;
+  background-color: lightskyblue;
   color: black;
 }
 
