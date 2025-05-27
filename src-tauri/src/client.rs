@@ -49,6 +49,12 @@ impl Client {
     pub fn pasv(&mut self) -> Result<TcpStream, Error> {
         self.get_mut()?.pasv()
     }
+    pub fn pwd(&mut self) -> Result<String, Error> {
+        self.get_mut()?.pwd()
+    }
+    pub fn is_logged_in(&self) -> bool {
+        self.0.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -85,7 +91,6 @@ impl ClientInner {
     }
     pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
         self.socket.write_all(dbg!(command).as_bytes())?;
-        self.socket.write_all(b"\r\n")?;
         self.socket.flush()?;
         let bytes_read = self.socket.read(self.buffer.as_mut())?;
         if bytes_read == 0 {
@@ -116,7 +121,7 @@ impl ClientInner {
         let data_socket = TcpStream::connect_timeout(&data_socket_addr, Duration::from_secs(5))?;
         Ok(data_socket)
     }
-    pub fn pwd(&mut self) -> Result<&str, Error> {
+    pub fn pwd(&mut self) -> Result<String, Error> {
         let response = self.send_command("PWD")?;
         if !response.starts_with(b"257") {
             return server_error!("获取当前工作目录失败");
@@ -126,6 +131,6 @@ impl ClientInner {
             .trim_matches('"')
             .to_string();
         self.pwd = path;
-        Ok(self.pwd.as_str())
+        Ok(self.pwd.clone())
     }
 }

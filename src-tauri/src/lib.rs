@@ -71,14 +71,17 @@ fn logout(state: State<'_, Mutex<Client>>) -> Result<(), Error> {
     Ok(())
 }
 
+fn is_data_conn_open(res: &[u8]) -> bool {
+    res.starts_with(b"150") || res.starts_with(b"226")
+}
 #[tauri::command]
-async fn ls(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
+async fn nls(state: State<'_, Mutex<Client>>, path: &str) -> Result<Vec<String>, Error> {
     let mut client = state.lock().unwrap();
     // 创建数据连接
     let mut data_socket = client.pasv()?;
-    // 发送 LIST 命令获取目录列表
-    let response = client.send_command("LIST")?;
-    if !response.starts_with(b"150") && !response.starts_with(b"226") {
+    // 发送 NLST 命令获取目录列表
+    let response = client.send_command(&format!("NLST {}", path))?;
+    if !is_data_conn_open(response) {
         return server_error!("目录列表获取失败");
     }
     let buffer = client.buffer_mut()?;
@@ -86,21 +89,23 @@ async fn ls(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
     if bytes == 0 {
         return server_error!("目录列表为空或读取失败");
     }
-    Ok(dbg!(String::from_utf8_lossy(buffer).trim()).to_string())
+    let data = String::from_utf8_lossy(&buffer[..bytes]);
+    let data = data.split('\n')
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<String>>();
+    Ok(data)
+}
+#[tauri::command]
+fn is_logged_in(state: State<'_, Mutex<Client>>) -> bool {
+    let client = state.lock().unwrap();
+    client.is_logged_in()
 }
 
 #[tauri::command]
 async fn pwd(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
     let mut client = state.lock().unwrap();
-    let response = client.send_command("PWD")?;
-    if !response.starts_with(b"257") {
-        return server_error!("当前工作目录获取失败");
-    }
-    // 提取目录路径
-    let path = String::from_utf8_lossy(&response[4..])
-        .trim_matches('"')
-        .to_string();
-    Ok(path)
+    client.pwd()
 }
 
 #[tauri::command]
@@ -109,7 +114,7 @@ async fn download(file: String, state: State<'_, Mutex<Client>>) -> Result<(), E
     let mut data_socket = client.pasv()?;
 
     let response = client.send_command(&format!("RETR {}", file))?;
-    if !response.starts_with(b"150") && !response.starts_with(b"226") {
+    if !is_data_conn_open(response) {
         return server_error!("文件下载失败");
     }
     data_socket.set_nonblocking(true)?;
@@ -135,7 +140,7 @@ async fn download(file: String, state: State<'_, Mutex<Client>>) -> Result<(), E
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![login, logout, ls, pwd, download])
+        .invoke_handler(tauri::generate_handler![login, logout, nls, pwd, download, is_logged_in])
         .manage(Mutex::new(Client::new()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

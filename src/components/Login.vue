@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import { computed, Ref, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { ErrorKind } from "../type";
 
 const host = ref("")
 const username = ref("");
 const passwd = ref("")
-const port = ref("")
+const port = ref(21)
 const msg: Ref<string | null> = ref(null)
 const status = ref(false);
 const isLoading = ref(false)
 const msgClass = computed(() => {
   return status.value ? 'alert-success' : 'alert-danger'
 })
-type ErrorKind = {
-  kind: 'io' | 'utf8' | 'invalidIpAddr' | 'server';
-  message: string;
-};
-
 async function doLogin(host: string, name: string, passwd: string, port: number) {
   isLoading.value = true
   msg.value = null
@@ -52,7 +48,7 @@ async function login() {
   isLoading.value = true
   msg.value = null
 
-  await doLogin(host.value, username.value, passwd.value, port.value ? parseInt(port.value) : 21)
+  await doLogin(host.value, username.value, passwd.value, port.value)
 }
 </script>
 
