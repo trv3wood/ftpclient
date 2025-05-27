@@ -6,7 +6,7 @@ use std::{
 use tauri::State;
 
 mod client;
-use client::{Client, ClientInner};
+use client::Client;
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
@@ -58,33 +58,22 @@ fn login(
     state: State<'_, Mutex<Client>>,
 ) -> Result<(), Error> {
     println!("login {host}:{port} {name} {passwd} ");
-    let mut client = ClientInner::build(host, name, passwd, port)?;
-    let username_res = client.send_command(&format!("USER {}", client.name))?;
-    if !username_res.starts_with(b"331") {
-        dbg!(String::from_utf8_lossy(username_res));
-        return server_error!("用户名错误或未找到");
-    }
-    let pass_res = client.send_command(&format!("PASS {}", client.passwd))?;
-    if !pass_res.starts_with(b"230") {
-        dbg!(String::from_utf8_lossy(pass_res));
-        return server_error!("密码错误或未找到");
-    }
+    let client = Client::build(host, name, passwd, port)?;
     let mut state = state.lock().unwrap();
-    state.0 = Some(client);
+    *state = client;
     Ok(())
 }
 
 #[tauri::command]
 fn logout(state: State<'_, Mutex<Client>>) -> Result<(), Error> {
     let mut state = state.lock().unwrap();
-    let _ = state.get_mut()?.send_command("QUIT");
+    let _ = state.send_command("QUIT");
     Ok(())
 }
 
 #[tauri::command]
 async fn ls(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
-    let mut state = state.lock().unwrap();
-    let client = state.get_mut()?;
+    let mut client = state.lock().unwrap();
     // 创建数据连接
     let mut data_socket = client.pasv()?;
     // 发送 LIST 命令获取目录列表
@@ -92,17 +81,17 @@ async fn ls(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
     if !response.starts_with(b"150") && !response.starts_with(b"226") {
         return server_error!("目录列表获取失败");
     }
-    let bytes = data_socket.read(client.buffer.as_mut())?;
+    let buffer = client.buffer_mut()?;
+    let bytes = data_socket.read(buffer)?;
     if bytes == 0 {
         return server_error!("目录列表为空或读取失败");
     }
-    Ok(dbg!(String::from_utf8_lossy(&client.buffer[..bytes]).trim()).to_string())
+    Ok(dbg!(String::from_utf8_lossy(buffer).trim()).to_string())
 }
 
 #[tauri::command]
 async fn pwd(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
-    let mut state = state.lock().unwrap();
-    let client = state.get_mut()?;
+    let mut client = state.lock().unwrap();
     let response = client.send_command("PWD")?;
     if !response.starts_with(b"257") {
         return server_error!("当前工作目录获取失败");
@@ -116,8 +105,7 @@ async fn pwd(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
 
 #[tauri::command]
 async fn download(file: String, state: State<'_, Mutex<Client>>) -> Result<(), Error> {
-    let mut state = state.lock().unwrap();
-    let client = state.get_mut()?;
+    let mut client = state.lock().unwrap();
     let mut data_socket = client.pasv()?;
 
     let response = client.send_command(&format!("RETR {}", file))?;
@@ -131,10 +119,11 @@ async fn download(file: String, state: State<'_, Mutex<Client>>) -> Result<(), E
     ))?;
     let file_path = download_dir.join(&file);
     let mut file = std::fs::File::create(&file_path)?;
+    let buffer = client.buffer_mut()?;
     loop {
-        match data_socket.read(client.buffer.as_mut()) {
+        match data_socket.read(buffer) {
             Ok(0) => break, // 连接关闭
-            Ok(n) => file.write_all(&client.buffer[..n])?,
+            Ok(n) => file.write_all(&buffer[..n])?,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue, // 非阻塞模式下继续读取
             Err(e) => return Err(Error::Io(e)),
         }
@@ -147,7 +136,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![login, logout, ls, pwd, download])
-        .manage(Mutex::new(Client(None)))
+        .manage(Mutex::new(Client::new()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

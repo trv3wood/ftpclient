@@ -1,28 +1,64 @@
-use std::{io::{Read, Write}, net::{IpAddr, SocketAddr, TcpStream}, str::FromStr, time::Duration};
-
-use crate::Error;
-
-pub struct Client(pub Option<ClientInner>);
-impl Client {
-    pub fn get_mut(&mut self) -> Result<&mut ClientInner, Error> {
-        self.0.as_mut().ok_or_else(|| Error::Server("未登录".into()))
-    }
-}
-
-#[derive(Debug)]
-pub struct ClientInner {
-    pub name: String,
-    pub passwd: String,
-    socket: TcpStream,
-    pub buffer: Box<[u8; 1024]>, // 使用 Box<[u8]> 代替 Vec<u8>，更适合只读操
-    fs: std::collections::BTreeMap<String, String>, // 文件系统模拟
-}
-
 #[macro_export]
 macro_rules! server_error {
     ($msg:expr) => {
         Err(Error::Server($msg.into()))
     };
+}
+
+use std::{
+    io::{Read, Write},
+    net::{IpAddr, SocketAddr, TcpStream},
+    str::FromStr,
+    time::Duration,
+};
+
+use crate::Error;
+
+pub struct Client(Option<ClientInner>);
+impl Client {
+    pub fn new() -> Self {
+        Self(None)
+    }
+    fn get_mut(&mut self) -> Result<&mut ClientInner, Error> {
+        self.0
+            .as_mut()
+            .ok_or_else(|| Error::Server("未登录".into()))
+    }
+    pub fn build(host: String, name: String, passwd: String, port: u16) -> Result<Self, Error> {
+        let mut inner = ClientInner::build(host, name, passwd, port)?;
+        let username_res = inner.send_command(&format!("USER {}", inner.name))?;
+        if !username_res.starts_with(b"331") {
+            dbg!(String::from_utf8_lossy(username_res));
+            return server_error!("用户名错误或未找到");
+        }
+        let pass_res = inner.send_command(&format!("PASS {}", inner.passwd))?;
+        if !pass_res.starts_with(b"230") {
+            dbg!(String::from_utf8_lossy(pass_res));
+            return server_error!("密码错误或未找到");
+        }
+        let pwd_res = inner.pwd()?;
+        inner.root = pwd_res.to_string();
+        Ok(Self(Some(inner)))
+    }
+    pub fn buffer_mut(&mut self) -> Result<&mut [u8], Error> {
+        Ok(self.get_mut()?.buffer.as_mut())
+    }
+    pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
+        self.get_mut()?.send_command(command)
+    }
+    pub fn pasv(&mut self) -> Result<TcpStream, Error> {
+        self.get_mut()?.pasv()
+    }
+}
+
+#[derive(Debug)]
+struct ClientInner {
+    name: String,
+    passwd: String,
+    socket: TcpStream,
+    buffer: Box<[u8; 1024]>, // 使用 Box<[u8]> 代替 Vec<u8>，更适合只读操
+    pwd: String,
+    root: String, // 根目录
 }
 
 impl ClientInner {
@@ -43,7 +79,8 @@ impl ClientInner {
             passwd,
             socket,
             buffer,
-            fs: std::collections::BTreeMap::new(),
+            pwd: String::new(),
+            root: String::new(), // 初始化根目录为空
         })
     }
     pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
@@ -78,5 +115,17 @@ impl ClientInner {
         println!("Data socket address: {}", data_socket_addr);
         let data_socket = TcpStream::connect_timeout(&data_socket_addr, Duration::from_secs(5))?;
         Ok(data_socket)
+    }
+    pub fn pwd(&mut self) -> Result<&str, Error> {
+        let response = self.send_command("PWD")?;
+        if !response.starts_with(b"257") {
+            return server_error!("获取当前工作目录失败");
+        }
+        // 提取目录路径
+        let path = String::from_utf8_lossy(&response[4..])
+            .trim_matches('"')
+            .to_string();
+        self.pwd = path;
+        Ok(self.pwd.as_str())
     }
 }
