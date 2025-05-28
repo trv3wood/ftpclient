@@ -3,12 +3,10 @@ import { ref } from 'vue';
 import Login from './components/Login.vue';
 import Home from './components/Home.vue';
 import { invoke } from '@tauri-apps/api/core';
-import Test from './components/Test.vue';
 const activeButton = ref('connect');
 const tabs = [
-  { name: 'connect', label: '连接' },
-  { name: 'file', label: '文件' },
-  { name: 'test', label: '测试' }
+  { name: 'connect', label: '连接', component: Login },
+  { name: 'home', label: '文件', component: Home },
 ];
 async function quit() {
   // 退出逻辑
@@ -28,14 +26,8 @@ async function quit() {
       </button>
     </div>
     <div class="view">
-      <div v-if="activeButton === 'connect'">
-        <Login />
-      </div>
-      <div v-else-if="activeButton === 'file'">
-        <Home />
-      </div>
-      <div v-else-if="activeButton === 'test'">
-        <Test />
+      <div v-for="tab in tabs" v-show="activeButton === tab.name" :key="tab.name">
+        <component :is="tab.component" />
       </div>
     </div>
   </main>
