@@ -25,8 +25,8 @@ async function quit() {
         断开连接
       </button>
     </div>
-    <div class="view">
-      <div v-for="tab in tabs" v-show="activeButton === tab.name" :key="tab.name">
+    <div class="view" v-for="tab in tabs">
+      <div v-if="activeButton === tab.name">
         <component :is="tab.component" />
       </div>
     </div>

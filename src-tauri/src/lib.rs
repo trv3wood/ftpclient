@@ -4,6 +4,16 @@ use tauri::State;
 
 mod client;
 use client::Client;
+#[macro_export]
+macro_rules! log_dbg {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            dbg!($($arg)*)
+        } else {
+            $($arg)*
+        }
+    };
+}
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
@@ -54,7 +64,7 @@ fn login(
     port: u16,
     state: State<'_, Mutex<Client>>,
 ) -> Result<(), Error> {
-    println!("login {host}:{port} {name} {passwd} ");
+    log_dbg!((&host, &port, &name, &passwd));
     let mut client = Client::build(host, name, passwd, port)?;
     let mut state = state.lock().unwrap();
     client.login()?;

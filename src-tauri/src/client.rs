@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use crate::Error;
+use crate::{log_dbg, Error};
 
 #[derive(Debug)]
 pub struct Client {
@@ -62,7 +62,7 @@ impl Client {
             .socket
             .take()
             .ok_or_else(|| Error::Server("未连接到服务器，请先登录".into()))?;
-        sock.write_all(dbg!(command).as_bytes())?;
+        sock.write_all(log_dbg!(command).as_bytes())?;
         sock.flush()?;
         let bytes_read = sock.read(self.buf.as_mut())?;
         if bytes_read == 0 {
@@ -70,7 +70,7 @@ impl Client {
         }
         self.socket = Some(sock);
         let response = &self.buf[0..bytes_read];
-        dbg!(String::from_utf8_lossy(response));
+        log_dbg!(String::from_utf8_lossy(response));
         Ok(response)
     }
     pub fn login(&mut self) -> Result<(), Error> {
@@ -96,7 +96,7 @@ impl Client {
             ));
         }
         let data_socket_info = String::from_utf8_lossy(response);
-        println!("PASV Response: {}", data_socket_info);
+        log_dbg!(&data_socket_info);
         // 解析 PASV 响应以获取数据连接信息
         let parts: Vec<&str> = data_socket_info.split(|c| c == '(' || c == ')').collect();
         if parts.len() < 2 {
@@ -109,7 +109,7 @@ impl Client {
         let ip = addr_parts[0..4].join(".");
         let port = addr_parts[4].parse::<u16>()? * 256 + addr_parts[5].parse::<u16>()?;
         let data_socket_addr = SocketAddr::new(IpAddr::from_str(&ip)?, port);
-        println!("Data socket address: {}", data_socket_addr);
+        log_dbg!(data_socket_addr);
         let data_socket = TcpStream::connect_timeout(&data_socket_addr, Duration::from_secs(5))?;
         Ok(data_socket)
     }
@@ -199,7 +199,7 @@ impl Client {
         let mut data_socket: TcpStream = self.pasv()?;
         let path: PathBuf = PathBuf::from(file);
         let filename: std::borrow::Cow<'_, str> = path.file_name().unwrap().to_string_lossy();
-        let response = self.send_command(&format!("STOR {}", dbg!(filename)))?;
+        let response = self.send_command(&format!("STOR {}", log_dbg!(filename)))?;
         if !is_data_conn_open(response) {
             return server_error!("上传文件失败");
         }
