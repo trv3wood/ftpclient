@@ -1,85 +1,89 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-
-const host = ref("")
-const username = ref("");
-const passwd = ref("")
-const port = ref("")
-const msg = ref("")
-const isLoading = ref(false)
-const msgClass = computed(() => ({
-  'alert-success': msg.value.includes('成功'),
-  'alert-danger': msg.value.includes('失败') || msg.value.includes('错误')
-}))
-
-async function login() {
-  try {
-    isLoading.value = true
-    msg.value = ''
-
-    // 示例验证
-    if (!host.value || !username.value || !passwd.value) {
-      throw new Error('请填写完整信息')
-    }
-
-    msg.value = await invoke('login', { host: host.value, name: username.value, passwd: passwd.value, port: port.value })
-  } catch (error) {
-    msg.value = error instanceof Error ? error.message : '连接失败'
-  } finally {
-    isLoading.value = false
-  }
+import { ref } from 'vue';
+import Login from './components/Login.vue';
+import Home from './components/Home.vue';
+import { invoke } from '@tauri-apps/api/core';
+import Test from './components/Test.vue';
+const activeButton = ref('connect');
+const tabs = [
+  { name: 'connect', label: '连接' },
+  { name: 'file', label: '文件' },
+  { name: 'test', label: '测试' }
+];
+async function quit() {
+  // 退出逻辑
+  console.log('退出登录');
+  await invoke('logout');
 }
 </script>
-
 <template>
-  <main class="container mt-5">
-    <div class="row justify-content-center">
-      <div class="col-md-6">
-        <h1 class="text-center mb-4">FTP客户端</h1>
-
-        <form @submit.prevent="login" class="card p-4 shadow-sm">
-          <div class="mb-3">
-            <label for="host" class="form-label">主机地址</label>
-            <input id="host" v-model="host" type="text" class="form-control" placeholder="例如: ftp.example.com" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="username" class="form-label">用户名</label>
-            <input id="username" v-model="username" type="text" class="form-control" placeholder="输入用户名" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="passwd" class="form-label">密码</label>
-            <input id="passwd" v-model="passwd" type="password" class="form-control" placeholder="输入密码" required>
-          </div>
-
-          <div class="mb-3">
-            <label for="port" class="form-label">端口</label>
-            <input id="port" v-model="port" type="number" class="form-control" placeholder="默认21" min="1" max="65535">
-          </div>
-
-          <button type="submit" class="btn btn-primary w-100">
-            <span v-if="!isLoading">连接</span>
-            <span v-else class="spinner-border spinner-border-sm" role="status"></span>
-          </button>
-
-          <div v-if="msg" class="alert mt-3" :class="msgClass">{{ msg }}</div>
-        </form>
+  <main class="container">
+    <div class="sidebar d-flex flex-column">
+      <button v-for="tab in tabs" :key="tab.name" :class="{ active: activeButton === tab.name }"
+        @click="activeButton = tab.name">
+        {{ tab.label }}
+      </button>
+      <button @click="quit" class="btn quitbtn">
+        断开连接
+      </button>
+    </div>
+    <div class="view">
+      <div v-if="activeButton === 'connect'">
+        <Login />
+      </div>
+      <div v-else-if="activeButton === 'file'">
+        <Home />
+      </div>
+      <div v-else-if="activeButton === 'test'">
+        <Test />
       </div>
     </div>
   </main>
 </template>
-
 <style scoped>
-.card {
-  border-radius: 0.5rem;
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20%;
+  height: 100%;
+  background-color: aliceblue;
 }
 
-.spinner-border {
-  vertical-align: middle;
+.sidebar button {
+  padding: 1em;
+  border: none;
+  margin: 1vw 1vw;
+  border-radius: 15px;
+  background-color: transparent;
+}
+
+.sidebar .quitbtn {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: calc(100% - 20px);
+  background-color: red;
+  color: white;
+}
+
+.sidebar button.active {
+  background-color: #007bff;
+  color: white;
+}
+
+.sidebar button:hover {
+  background-color: lightskyblue;
+  color: black;
+}
+
+.view {
+  position: relative;
+  margin-top: 0;
+  margin-left: 20%;
 }
 </style>
+
 <style>
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
