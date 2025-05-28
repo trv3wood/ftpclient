@@ -49,10 +49,6 @@ async function uploadfile() {
         const filePath = await open({
             multiple: false,
             directory: false,
-            filters: [{
-                name: 'All Files',
-                extensions: ['*']
-            }]
         })
         invoke('upload', { file: filePath })
         await loadDirectory('.')
