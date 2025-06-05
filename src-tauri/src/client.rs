@@ -232,4 +232,11 @@ impl Client {
         }
         Ok(())
     }
+    pub fn rm(&mut self, path: &str) -> Result<(), Error> {
+        let response = self.send_command(&format!("DELE {}", path))?;
+        if !response.starts_with(b"250") {
+            return server_error!(String::from_utf8_lossy(&response[4..]).to_string());
+        }
+        Ok(())
+    }
 }

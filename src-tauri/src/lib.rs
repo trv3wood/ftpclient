@@ -3,6 +3,8 @@ use std::{path::PathBuf, sync::Mutex};
 use tauri::State;
 
 mod client;
+mod message;
+
 use client::Client;
 #[macro_export]
 macro_rules! log_dbg {
