@@ -63,7 +63,7 @@ impl Client {
             .socket
             .take()
             .ok_or_else(|| Error::Server("未连接到服务器，请先登录".into()))?;
-        sock.write_all(mydbg!(command.as_ref()))?;
+        sock.write_all(command.as_ref())?;
         sock.flush()?;
         let bytes_read = sock.read(self.buf.as_mut())?;
         if bytes_read == 0 {
@@ -119,9 +119,9 @@ impl Client {
     }
 
     pub fn nlst(&mut self, path: &str) -> Result<Vec<String>, Error> {
-        // // 创建数据连接
+        // 创建数据连接
         let mut data_socket = self.pasv()?;
-        // // 发送 NLST 命令获取目录列表
+        // 发送 NLST 命令获取目录列表
         let response = self.send_command(&format!("NLST {}", path))?;
         if !is_data_conn_open(response) {
             return server_error!("目录列表获取失败");
@@ -232,7 +232,7 @@ impl Client {
     }
     pub fn mkdir(&mut self, path: &str) -> Result<(), Error> {
         let response = self.send_command(&format!("MKD {}", path))?;
-        if !response.starts_with(FILE_ACTION_COMPLETED) {
+        if !response.starts_with(PATHNAME_CREATED) {
             return server_error!(&response[4..].to_string());
         }
         Ok(())
