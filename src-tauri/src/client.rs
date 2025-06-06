@@ -9,7 +9,7 @@ use std::{
     borrow::Cow,
     io::{BufReader, Read, Write},
     net::{IpAddr, SocketAddr, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     time::Duration,
 };
@@ -186,10 +186,10 @@ impl Client {
         }
         Ok(file_path)
     }
-    pub fn upload(&mut self, file: String) -> Result<(), Error> {
+    pub fn upload(&mut self, file: &str) -> Result<(), Error> {
         let mut data_socket: TcpStream = self.pasv()?;
-        let path: PathBuf = PathBuf::from(file);
-        let filename: std::borrow::Cow<'_, str> = path.file_name().unwrap().to_string_lossy();
+        let path = Path::new(file);
+        let filename = path.file_name().unwrap().to_string_lossy();
         let response = self.send_command(&format!("STOR {}", mydbg!(filename)))?;
         if !is_data_conn_open(&response) {
             return server_error!("上传文件失败");
