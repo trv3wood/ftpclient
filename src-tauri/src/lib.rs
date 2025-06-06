@@ -7,14 +7,24 @@ mod message;
 
 use client::Client;
 #[macro_export]
-macro_rules! log_dbg {
-    ($($arg:tt)*) => {
+macro_rules! mydbg {
+    ($($val:expr),+ $(,)?) => {
         if cfg!(debug_assertions) {
-            dbg!($($arg)*)
+            dbg!($($val),+)
         } else {
-            $($arg)*
+            ($($val),+)
         }
     };
+    ($val:expr $(,)?) => {
+        if cfg!(debug_assertions) {
+            dbg!($val)
+        } else {
+            $val
+        }
+    };
+    () => {
+        dbg!()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,7 +76,7 @@ fn login(
     port: u16,
     state: State<'_, Mutex<Client>>,
 ) -> Result<(), Error> {
-    log_dbg!((&host, &port, &name, &passwd));
+    mydbg!((&host, &port, &name, &passwd));
     let mut client = Client::build(host, name, passwd, port)?;
     let mut state = state.lock().unwrap();
     client.login()?;
