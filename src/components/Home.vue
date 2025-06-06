@@ -134,7 +134,7 @@ function showRenameModal(item: string) {
     selectedItem.value = item;
     isDirectory.value = item.endsWith('/');
     showRenameModalFlag.value = true;
-    newName.value = '';
+    newName.value = item.replace(/\/$/, ''); // 去掉末尾的斜杠
 }
 
 // 执行重命名
@@ -252,7 +252,7 @@ async function deleteItem() {
                         <button type="button" class="btn-close" @click="showRenameModalFlag = false"></button>
                     </div>
                     <div class="modal-body">
-                        <input v-model="newName" type="text" class="form-control" :placeholder="selectedItem">
+                        <input v-model="newName" type="text" class="form-control" />
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" @click="showRenameModalFlag = false">取消</button>
