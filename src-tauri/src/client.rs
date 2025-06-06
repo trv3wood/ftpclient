@@ -6,6 +6,7 @@ macro_rules! server_error {
 }
 
 use std::{
+    borrow::Cow,
     io::{BufReader, Read, Write},
     net::{IpAddr, SocketAddr, TcpStream},
     path::PathBuf,
@@ -13,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{mydbg, Error};
+use crate::{message::*, mydbg, Error};
 
 #[derive(Debug)]
 pub struct Client {
@@ -33,8 +34,8 @@ impl Default for Client {
     }
 }
 
-fn is_data_conn_open(res: &[u8]) -> bool {
-    res.starts_with(b"150") || res.starts_with(b"226")
+fn is_data_conn_open(res: impl AsRef<str>) -> bool {
+    res.as_ref().starts_with("150") || res.as_ref().starts_with(CLOSING_DATA_CONNECTION)
 }
 
 impl Client {
@@ -57,12 +58,12 @@ impl Client {
             buf: Box::new([0; 1024]),
         })
     }
-    pub fn send_command(&mut self, command: &str) -> Result<&[u8], Error> {
+    pub fn send_command(&mut self, command: impl AsRef<[u8]>) -> Result<Cow<str>, Error> {
         let mut sock = self
             .socket
             .take()
             .ok_or_else(|| Error::Server("未连接到服务器，请先登录".into()))?;
-        sock.write_all(mydbg!(command).as_bytes())?;
+        sock.write_all(mydbg!(command.as_ref()))?;
         sock.flush()?;
         let bytes_read = sock.read(self.buf.as_mut())?;
         if bytes_read == 0 {
@@ -70,32 +71,26 @@ impl Client {
         }
         self.socket = Some(sock);
         let response = &self.buf[0..bytes_read];
-        mydbg!(String::from_utf8_lossy(response));
+        let response = String::from_utf8_lossy(response);
+        mydbg!(&response);
         Ok(response)
     }
     pub fn login(&mut self) -> Result<(), Error> {
         self.send_command(&format!("USER {}", self.name))?;
         let response = self.send_command(&format!("PASS {}\r\n", self.passwd))?;
-        if response.starts_with(b"230") {
+        if response.starts_with(USER_LOGGED_IN) {
             Ok(())
-        } else if response.starts_with(b"530") {
+        } else if response.starts_with(NOT_LOGGED_IN) {
             server_error!("登录失败，用户名或密码错误")
         } else {
-            Err(Error::Server(format!(
-                "登录失败，服务器响应: {}",
-                String::from_utf8_lossy(response)
-            )))
+            Err(Error::Server(format!("登录失败，服务器响应: {}", response)))
         }
     }
     pub fn pasv(&mut self) -> Result<TcpStream, Error> {
-        let response = self.send_command("PASV")?;
-        if !response.starts_with(b"227") {
-            return server_error!(&format!(
-                "进入被动模式失败 {}",
-                String::from_utf8_lossy(response)
-            ));
+        let data_socket_info = self.send_command("PASV")?;
+        if !data_socket_info.starts_with(ENTERING_PASSIVE_MODE) {
+            return server_error!(&format!("进入被动模式失败 {}", data_socket_info));
         }
-        let data_socket_info = String::from_utf8_lossy(response);
         mydbg!(&data_socket_info);
         // 解析 PASV 响应以获取数据连接信息
         let parts: Vec<&str> = data_socket_info.split(|c| c == '(' || c == ')').collect();
@@ -115,13 +110,11 @@ impl Client {
     }
     pub fn pwd(&mut self) -> Result<String, Error> {
         let response = self.send_command("PWD")?;
-        if !response.starts_with(b"257") {
+        if !response.starts_with(PATHNAME_CREATED) {
             return server_error!("获取当前工作目录失败");
         }
         // 提取目录路径
-        let path = String::from_utf8_lossy(&response[4..])
-            .trim_matches('"')
-            .to_string();
+        let path = response[4..].trim_matches('"').to_string();
         Ok(path)
     }
 
@@ -145,13 +138,13 @@ impl Client {
             .filter(|s| !s.is_empty())
             .collect::<Vec<String>>();
         let transfer_response = self.read()?;
-        if !transfer_response.starts_with(b"226") {
+        if !transfer_response.starts_with(CLOSING_DATA_CONNECTION) {
             self.socket.take();
             return server_error!("数据传输结束时服务器响应错误");
         }
         Ok(data)
     }
-    fn read(&mut self) -> Result<&[u8], Error> {
+    fn read(&mut self) -> Result<Cow<str>, Error> {
         let mut sock = self
             .socket
             .take()
@@ -161,16 +154,14 @@ impl Client {
             return server_error!("服务器没有响应");
         }
         self.socket = Some(sock);
-        Ok(&self.buf[0..bytes_read])
+        Ok(String::from_utf8_lossy(&self.buf[0..bytes_read]))
     }
     pub fn download(&mut self, file: &str) -> Result<PathBuf, Error> {
         let mut data_socket = self.pasv()?;
 
         let response = self.send_command(&format!("RETR {}", file))?;
-        if !is_data_conn_open(response) {
-            return Err(Error::Server(
-                String::from_utf8_lossy(&response[4..]).to_string(),
-            ));
+        if !is_data_conn_open(&response) {
+            return Err(Error::Server(response[4..].to_string()));
         }
         data_socket.set_nonblocking(true)?;
         let download_dir = dirs::download_dir().ok_or(std::io::Error::new(
@@ -189,7 +180,7 @@ impl Client {
             }
         }
         let transfer_response = self.read()?;
-        if !transfer_response.starts_with(b"226") {
+        if !transfer_response.starts_with(CLOSING_DATA_CONNECTION) {
             self.socket.take();
             return server_error!("数据传输结束时服务器响应错误");
         }
@@ -200,7 +191,7 @@ impl Client {
         let path: PathBuf = PathBuf::from(file);
         let filename: std::borrow::Cow<'_, str> = path.file_name().unwrap().to_string_lossy();
         let response = self.send_command(&format!("STOR {}", mydbg!(filename)))?;
-        if !is_data_conn_open(response) {
+        if !is_data_conn_open(&response) {
             return server_error!("上传文件失败");
         }
         let mut bufreader = BufReader::new(std::fs::File::open(&path)?);
@@ -210,7 +201,7 @@ impl Client {
 
         // 读取服务器响应以确认传输结束
         let transfer_response = self.read()?;
-        if !transfer_response.starts_with(b"226") {
+        if !transfer_response.starts_with(CLOSING_DATA_CONNECTION) {
             self.socket.take();
             return server_error!("数据传输结束时服务器响应错误");
         }
@@ -218,7 +209,7 @@ impl Client {
     }
     pub fn quit(&mut self) -> Result<(), Error> {
         let response = self.send_command("QUIT")?;
-        if !response.starts_with(b"221") {
+        if !response.starts_with(SERVICE_CLOSING_CONTROL_CONNECTION) {
             self.socket.take();
             return server_error!("退出失败");
         }
@@ -227,15 +218,40 @@ impl Client {
     }
     pub fn cd(&mut self, path: &str) -> Result<(), Error> {
         let response = self.send_command(&format!("CWD {}", path))?;
-        if !response.starts_with(b"250") {
-            return server_error!(String::from_utf8_lossy(&response[4..]).to_string());
+        if !response.starts_with(FILE_ACTION_COMPLETED) {
+            return server_error!(&response[4..].to_string());
         }
         Ok(())
     }
     pub fn rm(&mut self, path: &str) -> Result<(), Error> {
         let response = self.send_command(&format!("DELE {}", path))?;
-        if !response.starts_with(b"250") {
-            return server_error!(String::from_utf8_lossy(&response[4..]).to_string());
+        if !response.starts_with(FILE_ACTION_COMPLETED) {
+            return server_error!(&response[4..].to_string());
+        }
+        Ok(())
+    }
+    pub fn mkdir(&mut self, path: &str) -> Result<(), Error> {
+        let response = self.send_command(&format!("MKD {}", path))?;
+        if !response.starts_with(FILE_ACTION_COMPLETED) {
+            return server_error!(&response[4..].to_string());
+        }
+        Ok(())
+    }
+    pub fn rmdir(&mut self, path: &str) -> Result<(), Error> {
+        let response = self.send_command(&format!("RMD {}", path))?;
+        if !response.starts_with(FILE_ACTION_COMPLETED) {
+            return server_error!(&response[4..].to_string());
+        }
+        Ok(())
+    }
+    pub fn rename(&mut self, old: &str, new: &str) -> Result<(), Error> {
+        let response = self.send_command(&format!("RNFR {}", old))?;
+        if !response.starts_with(FILE_ACTION_NEEDS_FURTHER_INFO) {
+            return server_error!(&response[4..].to_string());
+        }
+        let response = self.send_command(&format!("RNTO {}", new))?;
+        if !response.starts_with(FILE_ACTION_COMPLETED) {
+            return server_error!(&response[4..].to_string());
         }
         Ok(())
     }
