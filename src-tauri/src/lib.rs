@@ -3,6 +3,8 @@ use std::{path::PathBuf, sync::Mutex};
 use tauri::State;
 
 mod client;
+mod message;
+
 use client::Client;
 #[macro_export]
 macro_rules! mydbg {
@@ -102,9 +104,9 @@ async fn pwd(state: State<'_, Mutex<Client>>) -> Result<String, Error> {
 }
 
 #[tauri::command]
-async fn download(state: State<'_, Mutex<Client>>, file: String) -> Result<PathBuf, Error> {
+async fn download(state: State<'_, Mutex<Client>>, file: &str) -> Result<PathBuf, Error> {
     let mut client = state.lock().unwrap();
-    client.download(&file)
+    client.download(file)
 }
 
 #[tauri::command]
@@ -114,14 +116,42 @@ async fn quit(state: State<'_, Mutex<Client>>) -> Result<(), Error> {
 }
 
 #[tauri::command]
-async fn cd(state: State<'_, Mutex<Client>>, path: String) -> Result<(), Error> {
+async fn cd(state: State<'_, Mutex<Client>>, path: &str) -> Result<(), Error> {
     let mut client = state.lock().unwrap();
     client.cd(&path)
 }
 #[tauri::command]
-async fn upload(state: State<'_, Mutex<Client>>, file: String) -> Result<(), Error> {
+async fn upload(state: State<'_, Mutex<Client>>, file: &str) -> Result<(), Error> {
     let mut client = state.lock().unwrap();
     client.upload(file)
+}
+
+#[tauri::command]
+async fn rm(state: State<'_, Mutex<Client>>, path: &str) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.rm(&path)
+}
+
+#[tauri::command]
+async fn mkdir(state: State<'_, Mutex<Client>>, path: &str) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.mkdir(&path)
+}
+
+#[tauri::command]
+async fn rmdir(state: State<'_, Mutex<Client>>, path: &str) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.rmdir(path)
+}
+
+#[tauri::command]
+async fn rename(
+    state: State<'_, Mutex<Client>>,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), Error> {
+    let mut client = state.lock().unwrap();
+    client.rename(old_path, new_path)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -130,7 +160,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            login, logout, nls, pwd, download, quit, cd, upload
+            login, logout, nls, pwd, download, quit, cd, upload, rm, mkdir, rmdir, rename
         ])
         .manage(Mutex::new(Client::default()))
         .run(tauri::generate_context!())
